@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Student Result - {{ session.student_name }} - Online Examination Portal</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.3/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container">
+            <a class="navbar-brand" href="#">Exam Portal Admin</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('admin.dashboard') }}">Dashboard</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('auth.logout') }}">Logout</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+    
+    <div class="container mt-4">
+        <div class="card">
+            <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                <h4>Exam Result Details</h4>
+                <a href="{{ url_for('admin.view_exam_results', exam_id=exam.id) }}" class="btn btn-sm btn-light">Back to Results</a>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-lg-6">
+                        <h5 class="mb-3">Student Information</h5>
+                        <table class="table table-bordered table-sm">
+                            <tr>
+                                <th style="width: 150px;">Student Name</th>
+                                <td>{{ session.student_name }}</td>
+                            </tr>
+                            <tr>
+                                <th>Email</th>
+                                <td>{{ session.student_email }}</td>
+                            </tr>
+                        </table>
+                    </div>
+                    <div class="col-lg-6">
+                        <h5 class="mb-3">Exam Information</h5>
+                        <table class="table table-bordered table-sm">
+                            <tr>
+                                <th style="width: 150px;">Exam Title</th>
+                                <td>{{ exam.title }}</td>
+                            </tr>
+                            <tr>
+                                <th>Start Time</th>
+                                <td>{{ session.start_time.strftime('%Y-%m-%d %H:%M') }}</td>
+                            </tr>
+                            <tr>
+                                <th>End Time</th>
+                                <td>{{ session.end_time.strftime('%Y-%m-%d %H:%M') }}</td>
+                            </tr>
+                            <tr>
+                                <th>Duration</th>
+                                <td>{{ exam.duration }} minutes</td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="row mt-4">
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-header bg-info text-white d-flex justify-content-between align-items-center">
+                                <h5 class="mb-0">Result Summary</h5>
+                                <a href="{{ url_for('admin.view_proctoring_logs', session_id=session.id) }}" class="btn btn-sm btn-light">View Proctoring Logs</a>
+                            </div>
+                            <div class="card-body">
+                                <div class="row text-center">
+                                    <div class="col-md-4 mb-3">
+                                        <div class="p-3 border rounded bg-light">
+                                            <h6>Score</h6>
+                                            <h2>{{ session.score }} / {{ total_marks }}</h2>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4 mb-3">
+                                        <div class="p-3 border rounded bg-light">
+                                            <h6>Percentage</h6>
+                                            <h2>{{ (session.score / total_marks * 100) | round }}%</h2>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4 mb-3">
+                                        <div class="p-3 border rounded 
+                                            {% if session.score / total_marks >= 0.7 %}
+                                                bg-success text-white
+                                            {% elif session.score / total_marks >= 0.4 %}
+                                                bg-warning
+                                            {% else %}
+                                                bg-danger text-white
+                                            {% endif %}">
+                                            <h6>Result</h6>
+                                            <h2>
+                                                {% if session.score / total_marks >= 0.7 %}
+                                                    Pass
+                                                {% elif session.score / total_marks >= 0.4 %}
+                                                    Average
+                                                {% else %}
+                                                    Fail
+                                                {% endif %}
+                                            </h2>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row mt-4">
+                    <div class="col-12">
+                        <h5 class="mb-3">Question Details</h5>
+                        <div class="table-responsive">
+    <table class="table table-striped table-bordered">
+        <thead class="bg-secondary text-white">
+            <tr>
+                <th>#</th>
+                <th>Question</th>
+                <th>Student Answer</th>
+                <th>Correct Answer</th>
+                <th>Marks</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for question in questions %}
+                {% set student_answer = answer_dict.get(question.id) %}
+                <tr>
+                    <td>{{ loop.index }}</td>
+                    <td>
+                        {{ question.question_text }}
+                        <div class="small text-muted mt-2">
+                            <div>A: {{ question.option_a }}</div>
+                            <div>B: {{ question.option_b }}</div>
+                            <div>C: {{ question.option_c }}</div>
+                            <div>D: {{ question.option_d }}</div>
+                        </div>
+                    </td>
+                    <td class="text-center">
+                        {% if student_answer %}
+                            {{ student_answer.selected_option|upper }}
+                        {% else %}
+                            <span class="text-muted">Not answered</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-center">{{ question.correct_option|upper }}</td>
+                    <td class="text-center">{{ question.marks }}</td>
+                    <td class="text-center">
+                        {% if student_answer and student_answer.selected_option == question.correct_option %}
+                            <span class="badge bg-success">Correct</span>
+                        {% elif student_answer %}
+                            <span class="badge bg-danger">Incorrect</span>
+                        {% else %}
+                            <span class="badge bg-secondary">Not attempted</span>
+                        {% endif %}
+                    </td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <a href="{{ url_for('admin.dashboard') }}" class="btn btn-primary mt-3">Back to Dashboard</a>
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

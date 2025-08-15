@@ -1,0 +1,1222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ exam.title }} - Online Examination Portal</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.3/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        body {
+            overflow: hidden;
+        }
+        .exam-container {
+            height: 100vh;
+            overflow-y: auto;
+            padding-bottom: 70px;
+        }
+        .timer-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 10px 0;
+            z-index: 1000;
+        }
+        .question-navigation {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: white;
+            padding: 10px 0;
+            border-top: 1px solid #ddd;
+            z-index: 1000;
+        }
+        .question-btn {
+            width: 40px;
+            height: 40px;
+            margin: 5px;
+            font-weight: bold;
+        }
+        .question-btn.answered {
+            background-color: #198754;
+            color: white;
+        }
+        .exam-warning {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 2000;
+            width: 80%;
+            max-width: 500px;
+            background-color: #dc3545;
+            color: white;
+            border-radius: 5px;
+            padding: 20px;
+            text-align: center;
+            display: none;
+        }
+        #video-container {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            width: 200px;
+            height: 150px;
+            border: 2px solid #dc3545;
+            z-index: 1001;
+            background-color: #000;
+            display: none;
+        }
+        #video-container video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+    </style>
+</head>
+<body>
+    <div class="timer-container">
+        <div class="container d-flex justify-content-between align-items-center">
+            <div>
+                <h4 class="mb-0">{{ exam.title }}</h4>
+            </div>
+            <div>
+                <span id="timer" class="badge bg-danger fs-5"></span>
+            </div>
+        </div>
+    </div>
+    
+    <div class="exam-warning" id="warning-message">
+        <h3>Warning!</h3>
+        <p id="warning-text">Suspicious activity detected!</p>
+        <button class="btn btn-light" onclick="dismissWarning()">Dismiss</button>
+    </div>
+    
+    <div id="video-container">
+        <video id="webcam-video" autoplay muted></video>
+    </div>
+    
+    <div class="container exam-container pt-5 mt-5">
+        <form id="exam-form">
+            {% for question in questions %}
+                <div class="question-card mb-4 p-3 border rounded" id="question-{{ question.id }}" style="display: none;">
+                    <h5>Question {{ loop.index }}</h5>
+                    <p>{{ question.question_text }}</p>
+                    
+                    <div class="options">
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="radio" name="question_{{ question.id }}" id="option_a_{{ question.id }}" value="a">
+                            <label class="form-check-label" for="option_a_{{ question.id }}">
+                                A. {{ question.option_a }}
+                            </label>
+                        </div>
+                        
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="radio" name="question_{{ question.id }}" id="option_b_{{ question.id }}" value="b">
+                            <label class="form-check-label" for="option_b_{{ question.id }}">
+                                B. {{ question.option_b }}
+                            </label>
+                        </div>
+                        
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="radio" name="question_{{ question.id }}" id="option_c_{{ question.id }}" value="c">
+                            <label class="form-check-label" for="option_c_{{ question.id }}">
+                                C. {{ question.option_c }}
+                            </label>
+                        </div>
+                        
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="radio" name="question_{{ question.id }}" id="option_d_{{ question.id }}" value="d">
+                            <label class="form-check-label" for="option_d_{{ question.id }}">
+                                D. {{ question.option_d }}
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            {% endfor %}
+        </form>
+    </div>
+    
+    <div class="question-navigation">
+        <div class="container">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <button id="prev-btn" class="btn btn-secondary" onclick="navigateQuestion(-1)">Previous</button>
+                    <button id="next-btn" class="btn btn-primary" onclick="navigateQuestion(1)">Next</button>
+                </div>
+                
+                <div class="question-buttons text-center">
+                    {% for question in questions %}
+                        <button class="btn btn-outline-primary question-btn" onclick="showQuestion({{ loop.index - 1 }})">{{ loop.index }}</button>
+                    {% endfor %}
+                </div>
+                
+                <div>
+                    <button id="submit-btn" class="btn btn-success" onclick="confirmSubmit()">Submit Exam</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Exam variables
+        const examDuration = {{ exam.duration }};
+        const sessionId = {{ session_id }};
+        const questions = JSON.parse('{{ questions|tojson|safe }}');
+        let currentQuestion = 0;
+        let answers = {};
+        let timeLeft = examDuration * 60; // in seconds
+        let timer;
+        
+        // Show the first question when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            showQuestion(0);
+            startTimer();
+            setupProctoringFeatures();
+            
+            // Add event listeners to radio buttons
+            document.querySelectorAll('input[type="radio"]').forEach(function(radio) {
+                radio.addEventListener('change', function() {
+                    const questionId = this.name.split('_')[1];
+                    const value = this.value;
+                    answers[questionId] = value;
+                    
+                    // Mark question as answered in navigation
+                    updateQuestionNavigation();
+                });
+            });
+            
+            // Restore answers from localStorage if any
+            restoreAnswers();
+        });
+        
+        function showQuestion(index) {
+            // Hide all questions
+            document.querySelectorAll('.question-card').forEach(function(card) {
+                card.style.display = 'none';
+            });
+            
+            // Show the selected question
+            const questionCards = document.querySelectorAll('.question-card');
+            if (index >= 0 && index < questionCards.length) {
+                questionCards[index].style.display = 'block';
+                currentQuestion = index;
+                
+                // Update navigation buttons
+                document.getElementById('prev-btn').disabled = (index === 0);
+                document.getElementById('next-btn').disabled = (index === questionCards.length - 1);
+            }
+        }
+        
+        function navigateQuestion(direction) {
+            const newIndex = currentQuestion + direction;
+            if (newIndex >= 0 && newIndex < document.querySelectorAll('.question-card').length) {
+                showQuestion(newIndex);
+            }
+        }
+        
+        function updateQuestionNavigation() {
+            const buttons = document.querySelectorAll('.question-btn');
+            
+            Object.keys(answers).forEach(function(questionId) {
+                // Find the question index
+                const index = questions.findIndex(q => q.id == questionId);
+                if (index !== -1 && buttons[index]) {
+                    buttons[index].classList.add('answered');
+                }
+            });
+        }
+        
+        function startTimer() {
+            updateTimerDisplay();
+            
+            timer = setInterval(function() {
+                timeLeft--;
+                updateTimerDisplay();
+                
+                if (timeLeft <= 0) {
+                    clearInterval(timer);
+                    submitExam();
+                }
+                
+                // Save answers every 30 seconds
+                if (timeLeft % 30 === 0) {
+                    saveAnswers();
+                }
+            }, 1000);
+        }
+        
+        function updateTimerDisplay() {
+            const hours = Math.floor(timeLeft / 3600);
+            const minutes = Math.floor((timeLeft % 3600) / 60);
+            const seconds = timeLeft % 60;
+            
+            const display = 
+                (hours > 0 ? hours + ':' : '') + 
+                (minutes < 10 ? '0' : '') + minutes + ':' + 
+                (seconds < 10 ? '0' : '') + seconds;
+                
+            document.getElementById('timer').textContent = display;
+            
+            // Change color if less than 5 minutes remaining
+            if (timeLeft < 300) {
+                document.getElementById('timer').classList.add('bg-danger');
+                document.getElementById('timer').classList.remove('bg-primary');
+            }
+        }
+        
+        function saveAnswers() {
+            localStorage.setItem('exam_' + sessionId + '_answers', JSON.stringify(answers));
+        }
+        
+        function restoreAnswers() {
+            const savedAnswers = localStorage.getItem('exam_' + sessionId + '_answers');
+            if (savedAnswers) {
+                answers = JSON.parse(savedAnswers);
+                
+                // Set the radio buttons according to saved answers
+                Object.keys(answers).forEach(function(questionId) {
+                    const value = answers[questionId];
+                    const radio = document.getElementById('option_' + value + '_' + questionId);
+                    if (radio) {
+                        radio.checked = true;
+                    }
+                });
+                
+                updateQuestionNavigation();
+            }
+        }
+        
+        function confirmSubmit() {
+            const totalQuestions = questions.length;
+            const answeredQuestions = Object.keys(answers).length;
+            
+            if (answeredQuestions < totalQuestions) {
+                const confirmation = confirm(`You have answered ${answeredQuestions} out of ${totalQuestions} questions. Are you sure you want to submit?`);
+                if (!confirmation) {
+                    return;
+                }
+            } else {
+                const confirmation = confirm('Are you sure you want to submit your exam?');
+                if (!confirmation) {
+                    return;
+                }
+            }
+            
+            submitExam();
+        }
+        
+        function submitExam() {
+    // Disable navigation buttons during submission
+    document.getElementById('prev-btn').disabled = true;
+    document.getElementById('next-btn').disabled = true;
+    document.getElementById('submit-btn').disabled = true;
+    
+    // Format answers object properly for submission
+    const formattedAnswers = {};
+    for (const questionId in answers) {
+        // Make sure we're sending just the clean question ID as an integer
+        const cleanQuestionId = questionId.toString().replace('question_', '');
+        formattedAnswers[cleanQuestionId] = answers[questionId];
+    }
+    
+    // Show loading indicator
+    const submitBtn = document.getElementById('submit-btn');
+    const originalBtnText = submitBtn.innerHTML;
+    submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Submitting...';
+    
+    // Log the submission attempt
+    console.log('Submitting exam with session ID:', sessionId);
+    console.log('Formatted answers:', formattedAnswers);
+    
+    // Submit exam with FIXED ENDPOINT URL
+    fetch('/student/api/exam/submit', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || ''
+        },
+        body: JSON.stringify({
+            session_id: sessionId,
+            answers: formattedAnswers
+        })
+    })
+    .then(response => {
+        console.log('Server response status:', response.status);
+        if (!response.ok) {
+            return response.text().then(text => {
+                throw new Error(`Server returned ${response.status}: ${text || response.statusText}`);
+            });
+        }
+        return response.json();
+    })
+    .then(data => {
+        console.log('Submission response:', data);
+        if (data.status === 'success') {
+            // Remove saved answers
+            localStorage.removeItem('exam_' + sessionId + '_answers');
+            
+            // Show result
+            alert('Exam submitted successfully! Your score: ' + data.score);
+            
+            // Redirect to dashboard
+            window.location.href = '/student/dashboard';
+        } else {
+            alert('Error submitting exam: ' + data.message);
+            // Re-enable buttons in case of error
+            document.getElementById('prev-btn').disabled = false;
+            document.getElementById('next-btn').disabled = false;
+            document.getElementById('submit-btn').disabled = false;
+            submitBtn.innerHTML = originalBtnText;
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Error submitting exam: ' + error.message);
+        
+        // Re-enable buttons
+        document.getElementById('prev-btn').disabled = false;
+        document.getElementById('next-btn').disabled = false;
+        document.getElementById('submit-btn').disabled = false;
+        submitBtn.innerHTML = originalBtnText;
+    });
+}
+        function setupProctoringFeatures() {
+            // Log start of exam
+            logProctoringEvent('exam_start', 'Exam started');
+            
+            // Set up webcam monitoring
+            initializeWebcamMonitoring();
+            
+            // Monitor tab visibility
+            document.addEventListener('visibilitychange', function() {
+                if (document.hidden) {
+                    logProctoringEvent('tab_switch', 'User switched away from exam tab');
+                    showWarning('Warning: Tab switching detected!');
+                }
+            });
+            
+            // Monitor for full screen exit
+            document.addEventListener('fullscreenchange', function() {
+                if (!document.fullscreenElement) {
+                    logProctoringEvent('suspicious_activity', 'User exited full screen mode');
+                    showWarning('Warning: Please stay in full screen mode!');
+                }
+            });
+            
+            // Request full screen mode
+            if (document.documentElement.requestFullscreen) {
+                document.documentElement.requestFullscreen().catch(err => {
+                    console.log('Error attempting to enable full-screen mode:', err);
+                    logProctoringEvent('suspicious_activity', 'Failed to enter full screen mode');
+                });
+            }
+        }
+        
+        function initializeWebcamMonitoring() {
+            const videoContainer = document.getElementById('video-container');
+            const video = document.getElementById('webcam-video');
+            
+            // Request webcam access
+            navigator.mediaDevices.getUserMedia({ video: true })
+                .then(function(stream) {
+                    video.srcObject = stream;
+                    videoContainer.style.display = 'block';
+                    
+                    // Start monitoring (example)
+                    // In a real app, you would use computer vision libraries
+                    // to detect faces, phone usage, etc.
+                })
+                .catch(function(err) {
+                    console.log('Error accessing webcam:', err);
+                    logProctoringEvent('suspicious_activity', 'Failed to access webcam');
+                    showWarning('Warning: Webcam access is required for this exam!');
+                });
+        }
+        
+        function logProctoringEvent(logType, details) {
+            fetch('/api/proctoring/log', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    session_id: sessionId,
+                    log_type: logType,
+                    details: details
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log('Proctoring log sent:', data);
+            })
+            .catch(error => {
+                console.error('Error sending proctoring log:', error);
+            });
+        }
+        
+        function showWarning(message) {
+            const warningBox = document.getElementById('warning-message');
+            const warningText = document.getElementById('warning-text');
+            
+            warningText.textContent = message;
+            warningBox.style.display = 'block';
+            
+            // Auto-dismiss after 5 seconds
+            setTimeout(function() {
+                dismissWarning();
+            }, 5000);
+        }
+        
+        function dismissWarning() {
+            document.getElementById('warning-message').style.display = 'none';
+        }
+        document.addEventListener('DOMContentLoaded', async function() {
+    // Initialize variables for AI proctoring
+    let model;
+    let video;
+    let canvas;
+    let faceDetectionInterval;
+    let suspiciousActivityCount = 0;
+    let phoneDetectionCount = 0;
+    let multipleFacesDetectionCount = 0;
+    let tabSwitchCount = 0;
+    let lastTabSwitchTime = null;
+    const sessionId = document.getElementById('session-id')?.value || {{ session_id }}; // Fallback if element not found
+    
+    // Set up webcam and start monitoring
+    async function setupProctoring() {
+        try {
+            console.log('Setting up AI proctoring...');
+            
+            // Get user media with constraints for better quality
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: {
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 },
+                    facingMode: 'user',
+                    frameRate: { min: 15, ideal: 30 }
+                },
+                audio: false
+            });
+            
+            // Set up video element
+            video = document.getElementById('webcam-video');
+            if (!video) {
+                console.error("Webcam video element not found");
+                logProctoringEvent('setup_failure', 'Webcam video element not found in DOM');
+                return;
+            }
+            
+            video.srcObject = stream;
+            
+            // Wait for video to load
+            await new Promise(resolve => {
+                video.onloadedmetadata = () => {
+                    video.play(); // Ensure video is playing
+                    resolve();
+                };
+            });
+            
+            // Set up canvas for processing
+            canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            
+            // Log successful webcam setup
+            logProctoringEvent('webcam_setup', 'Webcam accessed successfully');
+            
+            // FIXED: Load the proper face-api.js models for better face detection
+            try {
+                // Check if face-api is available (preferred option)
+                if (typeof faceapi !== 'undefined') {
+                    console.log('Loading face-api.js models...');
+                    await Promise.all([
+                        faceapi.nets.tinyFaceDetector.loadFromUri('/static/models'),
+                        faceapi.nets.faceLandmark68Net.loadFromUri('/static/models'),
+                        faceapi.nets.faceRecognitionNet.loadFromUri('/static/models'),
+                        faceapi.nets.faceExpressionNet.loadFromUri('/static/models')
+                    ]);
+                    console.log('face-api.js models loaded successfully');
+                    startFaceApiDetection();
+                    logProctoringEvent('ai_setup', 'face-api.js models loaded successfully');
+                }
+                // Try using blazeface if face-api.js is not available
+                else if (typeof blazeface !== 'undefined') {
+                    console.log('Loading Blazeface model...');
+                    model = await blazeface.load();
+                    console.log('Blazeface model loaded successfully');
+                    startBlazefaceDetection();
+                    logProctoringEvent('ai_setup', 'Blazeface AI model loaded successfully');
+                }
+                else {
+                    console.warn("No face detection libraries found. Using basic motion detection fallback.");
+                    logProctoringEvent('setup_warning', 'Using motion detection fallback');
+                    startMotionDetection();
+                }
+            } catch (modelError) {
+                console.error('Error loading AI models:', modelError);
+                logProctoringEvent('model_loading_error', 'Failed to load AI models: ' + modelError.message);
+                startMotionDetection(); // Fallback to basic motion detection
+            }
+            
+            // Display webcam feed
+            document.getElementById('video-container').style.display = 'block';
+            
+            console.log('Proctoring setup complete');
+            logProctoringEvent('setup_success', 'Proctoring setup completed successfully');
+            
+        } catch (error) {
+            console.error('Error setting up proctoring:', error);
+            showWarning('Failed to access webcam. Please enable webcam access to continue the exam.');
+            logProctoringEvent('setup_failure', 'Failed to set up webcam: ' + error.message);
+        }
+    }
+    
+    // IMPROVED: Face detection using face-api.js library
+    function startFaceApiDetection() {
+        console.log('Starting face-api.js detection...');
+        faceDetectionInterval = setInterval(async () => {
+            try {
+                if (!video || !canvas) {
+                    console.error("Video or canvas not initialized");
+                    return;
+                }
+                
+                // Make sure video is still playing and not frozen
+                if (video.paused || video.ended) {
+                    console.warn("Video is not playing. Attempting to restart...");
+                    await video.play().catch(err => {
+                        logProctoringEvent('video_error', 'Failed to restart video: ' + err.message);
+                    });
+                }
+                
+                // Draw video to canvas for processing/screenshot
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                
+                // Detect all faces with landmarks, expressions
+                const detectionOptions = new faceapi.TinyFaceDetectorOptions({ inputSize: 512, scoreThreshold: 0.5 });
+                const displaySize = { width: video.width, height: video.height };
+                
+                const detections = await faceapi.detectAllFaces(video, detectionOptions)
+                    .withFaceLandmarks()
+                    .withFaceExpressions();
+                
+                console.log(`Face-api detection result: ${detections.length} faces detected`);
+                
+                // No face detected
+                if (detections.length === 0) {
+                    suspiciousActivityCount++;
+                    console.log(`No face detected (count: ${suspiciousActivityCount})`);
+                    if (suspiciousActivityCount >= 3) {
+                        showWarning('No face detected. Please ensure your face is visible to the camera.');
+                        const screenshot = canvas.toDataURL('image/jpeg', 0.7);
+                        logProctoringEvent('face_missing', `No face detected in frame (${suspiciousActivityCount} consecutive frames)`, screenshot);
+                        
+                        if (suspiciousActivityCount >= 5) {
+                            suspiciousActivityCount = 3; // Keep it in warning state but don't continuously log
+                        }
+                    }
+                }
+                // Multiple faces detected
+                else if (detections.length > 1) {
+                    multipleFacesDetectionCount++;
+                    console.log(`Multiple faces detected: ${detections.length} (count: ${multipleFacesDetectionCount})`);
+                    
+                    showWarning(`Multiple faces detected (${detections.length}). Only the test taker should be present.`);
+                    
+                    // Take screenshot for evidence
+                    const screenshot = canvas.toDataURL('image/jpeg', 0.8);
+                    
+                    logProctoringEvent('multiple_faces', 
+                        `${detections.length} faces detected in frame. This is a violation of exam integrity.`, 
+                        screenshot);
+                    
+                    if (multipleFacesDetectionCount >= 3) {
+                        logProctoringEvent('serious_violation', 
+                            `Persistent multiple persons detected during exam (${multipleFacesDetectionCount} occurrences)`, 
+                            screenshot);
+                    }
+                }
+                // Single face - check for looking down/phone use using facial landmarks
+                else if (detections.length === 1) {
+                    // Reset no-face counter
+                    suspiciousActivityCount = 0;
+                    
+                    const detection = detections[0];
+                    const landmarks = detection.landmarks;
+                    const expressions = detection.expressions;
+                    
+                    // IMPROVED PHONE DETECTION LOGIC using face-api landmarks
+                    const face = detection.detection.box;
+                    
+                    // 1. Check face position in frame (is it looking down?)
+                    const faceY = face.y + (face.height / 2);
+                    const frameHeight = video.videoHeight;
+                    const relativePosition = faceY / frameHeight;
+                    
+                    // 2. Use landmarks to calculate head pose
+                    let lookingDown = false;
+                    
+                    if (landmarks) {
+                        const jaw = landmarks.getJawOutline();
+                        const nose = landmarks.getNose();
+                        const leftEye = landmarks.getLeftEye();
+                        const rightEye = landmarks.getRightEye();
+                        
+                        // Vertical distance between eyes and nose tip
+                        const eyeMidpointY = (leftEye[0].y + rightEye[0].y) / 2;
+                        const noseTipY = nose[nose.length - 1].y;
+                        const eyeToNoseDistance = noseTipY - eyeMidpointY;
+                        
+                        // Calculate head tilt ratio (higher means looking down)
+                        const faceHeight = jaw[jaw.length - 1].y - jaw[0].y;
+                        const tiltRatio = eyeToNoseDistance / faceHeight;
+                        
+                        if (tiltRatio > 0.28 || relativePosition > 0.6) {
+                            lookingDown = true;
+                        }
+                        
+                        // 3. Use expressions for additional confidence
+                        if (expressions && expressions.neutral < 0.5) {
+                            // Non-neutral expression might indicate concentration on a phone
+                            lookingDown = lookingDown || true;
+                        }
+                    }
+                    
+                    // If looking down detected
+                    if (lookingDown) {
+                        phoneDetectionCount++;
+                        console.log(`Possible phone usage detected (count: ${phoneDetectionCount})`);
+                        
+                        if (phoneDetectionCount >= 3) {
+                            showWarning('You appear to be looking down. Please keep your eyes on the screen.');
+                            
+                            const screenshot = canvas.toDataURL('image/jpeg', 0.8);
+                            logProctoringEvent('phone_usage_suspected', 
+                                `User appears to be looking down at phone (${phoneDetectionCount} consecutive frames)`, 
+                                screenshot);
+                            
+                            if (phoneDetectionCount >= 5) {
+                                logProctoringEvent('serious_violation', 
+                                    'Consistent pattern of looking down indicates potential use of unauthorized device', 
+                                    screenshot);
+                                phoneDetectionCount = 3; // Reset partially
+                            }
+                        }
+                    } else {
+                        // Reset counter gradually
+                        if (phoneDetectionCount > 0) {
+                            phoneDetectionCount--;
+                        }
+                    }
+                }
+                
+            } catch (error) {
+                console.error('Error in face-api detection cycle:', error);
+                logProctoringEvent('detection_error', 'Error in face detection cycle: ' + error.message);
+            }
+        }, 1500); // Check every 1.5 seconds
+    }
+    
+    // Backup option: Use Blazeface if face-api.js is not available
+    function startBlazefaceDetection() {
+        console.log('Starting Blazeface detection...');
+        faceDetectionInterval = setInterval(async () => {
+            try {
+                if (!model || !video || !canvas) {
+                    console.error("Model, video, or canvas not initialized");
+                    return;
+                }
+                
+                // Check if video is still playing
+                if (video.paused || video.ended) {
+                    console.warn("Video is not playing. Attempting to restart...");
+                    await video.play().catch(err => {
+                        logProctoringEvent('video_error', 'Failed to restart video: ' + err.message);
+                    });
+                }
+                
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                
+                // Run face detection
+                const predictions = await model.estimateFaces(video, false);
+                console.log(`Blazeface detection result: ${predictions.length} faces detected`);
+                
+                // Handle detection results (same logic as before)
+                if (predictions.length === 0) {
+                    suspiciousActivityCount++;
+                    console.log(`No face detected (count: ${suspiciousActivityCount})`);
+                    if (suspiciousActivityCount >= 3) {
+                        showWarning('No face detected. Please ensure your face is visible to the camera.');
+                        const screenshot = canvas.toDataURL('image/jpeg', 0.7);
+                        logProctoringEvent('face_missing', `No face detected in frame (${suspiciousActivityCount} consecutive frames)`, screenshot);
+                        
+                        if (suspiciousActivityCount >= 5) {
+                            suspiciousActivityCount = 3;
+                        }
+                    }
+                }
+                else if (predictions.length > 1) {
+                    multipleFacesDetectionCount++;
+                    console.log(`Multiple faces detected: ${predictions.length} (count: ${multipleFacesDetectionCount})`);
+                    
+                    showWarning(`Multiple faces detected (${predictions.length}). Only the test taker should be present.`);
+                    
+                    const screenshot = canvas.toDataURL('image/jpeg', 0.8);
+                    logProctoringEvent('multiple_faces', 
+                        `${predictions.length} faces detected in frame. This is a violation of exam integrity.`, 
+                        screenshot);
+                    
+                    if (multipleFacesDetectionCount >= 3) {
+                        logProctoringEvent('serious_violation', 
+                            `Persistent multiple persons detected during exam (${multipleFacesDetectionCount} occurrences)`, 
+                            screenshot);
+                    }
+                }
+                else if (predictions.length === 1) {
+                    suspiciousActivityCount = 0;
+                    
+                    // Get the detected face
+                    const face = predictions[0];
+                    
+                    // Calculate face position metrics
+                    const faceCenterY = (face.topLeft[1] + face.bottomRight[1]) / 2;
+                    const frameHeight = video.videoHeight;
+                    const relativePosition = faceCenterY / frameHeight;
+                    
+                    // Analyze head tilt if landmarks are available
+                    let lookingDown = false;
+                    
+                    if (face.landmarks && face.landmarks.length >= 6) {
+                        const leftEye = face.landmarks[0];
+                        const rightEye = face.landmarks[1];
+                        const nose = face.landmarks[2];
+                        
+                        // Calculate vertical relationship between eyes and nose
+                        const eyeLevel = (leftEye[1] + rightEye[1]) / 2;
+                        const noseToEyeVertical = nose[1] - eyeLevel;
+                        
+                        // If nose is significantly below eye level, head is tilted down
+                        if (noseToEyeVertical > 10 || relativePosition > 0.62) {
+                            lookingDown = true;
+                        }
+                    } else if (relativePosition > 0.65) {
+                        // Fallback if landmarks aren't available
+                        lookingDown = true;
+                    }
+                    
+                    // If looking down detected
+                    if (lookingDown) {
+                        phoneDetectionCount++;
+                        console.log(`Possible phone usage detected (count: ${phoneDetectionCount})`);
+                        
+                        if (phoneDetectionCount >= 3) {
+                            showWarning('You appear to be looking down. Please keep your eyes on the screen.');
+                            
+                            const screenshot = canvas.toDataURL('image/jpeg', 0.8);
+                            logProctoringEvent('phone_usage_suspected', 
+                                `User appears to be looking down at phone (${phoneDetectionCount} consecutive frames)`, 
+                                screenshot);
+                            
+                            if (phoneDetectionCount >= 5) {
+                                logProctoringEvent('serious_violation', 
+                                    'Consistent pattern of looking down indicates potential use of unauthorized device', 
+                                    screenshot);
+                                phoneDetectionCount = 3;
+                            }
+                        }
+                    } else {
+                        if (phoneDetectionCount > 0) {
+                            phoneDetectionCount--;
+                        }
+                    }
+                }
+                
+            } catch (error) {
+                console.error('Error in Blazeface detection cycle:', error);
+                logProctoringEvent('detection_error', 'Error in face detection cycle: ' + error.message);
+            }
+        }, 2000);
+    }
+    
+    // Fallback to basic motion detection if no face detection libraries are available
+    function startMotionDetection() {
+        console.log('Starting basic motion detection fallback...');
+        
+        let previousImageData = null;
+        const motionThreshold = 20; // Sensitivity threshold (0-255)
+        const motionPixelThreshold = 0.05; // % of pixels that need to change to detect motion
+        
+        faceDetectionInterval = setInterval(() => {
+            try {
+                if (!video || !canvas) {
+                    console.error("Video or canvas not initialized");
+                    return;
+                }
+                
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                
+                // Detect motion by comparing frames
+                const currentImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                
+                if (previousImageData) {
+                    let motionPixels = 0;
+                    const totalPixels = currentImageData.data.length / 4;
+                    
+                    // Compare current frame with previous frame (only check every 4th pixel for performance)
+                    for (let i = 0; i < currentImageData.data.length; i += 16) {
+                        const diff = Math.abs(currentImageData.data[i] - previousImageData.data[i]);
+                        if (diff > motionThreshold) {
+                            motionPixels++;
+                        }
+                    }
+                    
+                    const motionRatio = motionPixels / (totalPixels / 4);
+                    console.log(`Motion detected: ${(motionRatio * 100).toFixed(2)}% of pixels changed`);
+                    
+                    // Detect if motion exceeds threshold (could indicate suspicious activity)
+                    if (motionRatio > motionPixelThreshold) {
+                        console.log('Significant motion detected - possible person swap or suspicious activity');
+                        const screenshot = canvas.toDataURL('image/jpeg', 0.7);
+                        logProctoringEvent('motion_detected', 
+                            `Significant motion detected (${(motionRatio * 100).toFixed(2)}% of pixels changed)`, 
+                            screenshot);
+                        
+                        showWarning('Movement detected. Please remain still during the exam.');
+                    }
+                }
+                
+                // Save current frame for next comparison
+                previousImageData = currentImageData;
+                
+                // Take periodic screenshots for manual review
+                if (Math.random() < 0.05) { // 5% chance - more frequent
+                    const screenshot = canvas.toDataURL('image/jpeg', 0.6);
+                    logProctoringEvent('fallback_monitoring', 'Periodic screenshot (motion detection)', screenshot);
+                }
+                
+            } catch (error) {
+                console.error('Error in motion detection:', error);
+            }
+        }, 2000);
+    }
+    
+    // FIXED: Log proctoring events to server with correct endpoint and error handling
+    async function logProctoringEvent(logType, details, screenshot = null) {
+        try {
+            console.log(`Logging proctoring event: ${logType} - ${details}`);
+            
+            // CRITICAL FIX: Use the correct endpoint URL
+            // The error was showing 404 Not Found for /api/proctoring/log
+            // Using a relative path that matches the Flask routes
+            const endpoint = '/student/api/proctoring/log'; // FIXED URL
+            
+            const data = {
+                session_id: sessionId,
+                log_type: logType,
+                details: details,
+                timestamp: new Date().toISOString(),
+                screenshot: screenshot,
+                browser_info: getBrowserInfo(),
+                client_timestamp: new Date().getTime()
+            };
+            
+            // Make the request with proper error handling
+            const response = await fetch(endpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || ''
+                },
+                body: JSON.stringify(data),
+                // Add timeout to prevent hanging requests
+                signal: AbortSignal.timeout(8000) // 8 second timeout
+            });
+            
+            console.log(`Log response status: ${response.status}`);
+            
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`Server error: ${response.status} - ${errorText}`);
+            }
+            
+            const result = await response.json();
+            
+            if (result.status !== 'success') {
+                console.error('Failed to log proctoring event:', result.message);
+                // Queue for retry
+                retryLogEvent(data);
+            }
+            
+            return result;
+        } catch (error) {
+            console.error('Failed to log proctoring event:', error);
+            
+            // If endpoint is still failing, try an alternative endpoint
+            if (error.message.includes('404')) {
+                console.log('Trying alternative endpoint...');
+                try {
+                    // Try the alternative endpoint without screenshot to reduce payload
+                    const altData = {
+                        session_id: sessionId,
+                        log_type: logType,
+                        details: details,
+                        timestamp: new Date().toISOString()
+                    };
+                    
+                    const altResponse = await fetch('/exam/log_event', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || ''
+                        },
+                        body: JSON.stringify(altData),
+                        signal: AbortSignal.timeout(5000)
+                    });
+                    
+                    console.log(`Alternative log response: ${altResponse.status}`);
+                } catch (altError) {
+                    console.error('Alternative endpoint also failed:', altError);
+                }
+            }
+            
+            // Store in local storage for later retry
+            retryLogEvent({
+                session_id: sessionId,
+                log_type: logType,
+                details: details,
+                timestamp: new Date().toISOString(),
+                // Truncate screenshot to save space
+                screenshot: screenshot ? 'data:image/jpeg;base64,/9j/truncated' : null
+            });
+        }
+    }
+    
+    // Helper function to get browser information
+    function getBrowserInfo() {
+        return {
+            userAgent: navigator.userAgent,
+            platform: navigator.platform,
+            screenWidth: window.screen.width,
+            screenHeight: window.screen.height,
+            devicePixelRatio: window.devicePixelRatio
+        };
+    }
+    
+    // Queue for retry mechanism
+    let eventRetryQueue = [];
+    
+    // Load any saved events from localStorage
+    try {
+        const savedQueue = localStorage.getItem('proctoring_retry_queue');
+        if (savedQueue) {
+            const parsedQueue = JSON.parse(savedQueue);
+            if (Array.isArray(parsedQueue)) {
+                eventRetryQueue = parsedQueue;
+                console.log(`Loaded ${eventRetryQueue.length} saved events from local storage`);
+            }
+        }
+    } catch (e) {
+        console.error('Error loading saved events:', e);
+    }
+    
+    function retryLogEvent(eventData) {
+        // Truncate screenshot data before storing to save space
+        if (eventData.screenshot && eventData.screenshot.length > 1000) {
+            eventData.screenshot = 'data:image/jpeg;base64,/9j/truncated';
+            eventData.screenshot_truncated = true;
+        }
+        
+        eventRetryQueue.push(eventData);
+        
+        // Save to localStorage for persistence
+        try {
+            localStorage.setItem('proctoring_retry_queue', JSON.stringify(eventRetryQueue));
+        } catch (e) {
+            console.error('Error saving retry queue:', e);
+            // If localStorage is full, clear it and try again with only most recent events
+            if (e.name === 'QuotaExceededError') {
+                localStorage.clear();
+                const recentEvents = eventRetryQueue.slice(-10); // Keep only recent events
+                localStorage.setItem('proctoring_retry_queue', JSON.stringify(recentEvents));
+                eventRetryQueue = recentEvents;
+            }
+        }
+        
+        // If this is the first item, start the retry process
+        if (eventRetryQueue.length === 1) {
+            setTimeout(processRetryQueue, 5000);
+        }
+    }
+    
+    async function processRetryQueue() {
+        if (eventRetryQueue.length === 0) return;
+        
+        const event = eventRetryQueue[0];
+        
+        try {
+            // FIXED: Use correct endpoint URL
+            const response = await fetch('/student/api/proctoring/log', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || ''
+                },
+                body: JSON.stringify(event),
+                signal: AbortSignal.timeout(8000)
+            });
+            
+            if (response.ok) {
+                // Success! Remove from queue
+                eventRetryQueue.shift();
+                console.log('Successfully retried logging event');
+                
+                // Update localStorage
+                localStorage.setItem('proctoring_retry_queue', JSON.stringify(eventRetryQueue));
+            } else {
+                console.error('Retry failed:', await response.text());
+            }
+        } catch (error) {
+            console.error('Error during retry:', error);
+        }
+        
+        // If there are more items or this one failed, try again later
+        if (eventRetryQueue.length > 0) {
+            // Exponential backoff - wait longer between retries
+            const delay = Math.min(10000 + (eventRetryQueue.length * 2000), 30000);
+            setTimeout(processRetryQueue, delay);
+        }
+    }
+    
+    // Show warning message
+    function showWarning(text) {
+        console.log(`Showing warning: ${text}`);
+        
+        const warningElement = document.getElementById('warning-message');
+        const warningText = document.getElementById('warning-text');
+        
+        if (!warningElement || !warningText) {
+            console.error('Warning elements not found in DOM');
+            return;
+        }
+        
+        warningText.textContent = text;
+        warningElement.style.display = 'block';
+        warningElement.style.zIndex = '10000';
+        
+        // Add shaking animation for emphasis
+        warningElement.style.animation = 'shake 0.5s';
+        warningElement.style.animationIterationCount = '3';
+        
+        // Add CSS if not already present
+        if (!document.getElementById('warning-animation-style')) {
+            const style = document.createElement('style');
+            style.id = 'warning-animation-style';
+            style.textContent = `
+                @keyframes shake {
+                    0% { transform: translate(-50%, -50%) rotate(0deg); }
+                    10% { transform: translate(-51%, -50%) rotate(-1deg); }
+                    20% { transform: translate(-49%, -50%) rotate(1deg); }
+                    30% { transform: translate(-51%, -50%) rotate(0deg); }
+                    40% { transform: translate(-49%, -50%) rotate(1deg); }
+                    50% { transform: translate(-51%, -50%) rotate(-1deg); }
+                    60% { transform: translate(-49%, -50%) rotate(0deg); }
+                    70% { transform: translate(-51%, -50%) rotate(-1deg); }
+                    80% { transform: translate(-49%, -50%) rotate(1deg); }
+                    90% { transform: translate(-51%, -50%) rotate(0deg); }
+                    100% { transform: translate(-50%, -50%) rotate(0deg); }
+                }
+            `;
+            document.head.appendChild(style);
+        }
+        
+        // Play warning sound if available
+        try {
+            const warningSound = new Audio('/static/sounds/warning.mp3');
+            warningSound.play().catch(e => console.error('Could not play warning sound:', e));
+        } catch (e) {
+            console.error('Error playing warning sound:', e);
+        }
+        
+        // Hide warning after 5 seconds
+        setTimeout(() => {
+            warningElement.style.display = 'none';
+        }, 5000);
+    }
+    
+    // Dismiss warning
+    window.dismissWarning = function() {
+        const warningElement = document.getElementById('warning-message');
+        if (warningElement) {
+            warningElement.style.display = 'none';
+        }
+    };
+    
+    // Monitor tab switching
+    document.addEventListener('visibilitychange', () => {
+        const now = new Date();
+        
+        if (document.hidden) {
+            tabSwitchCount++;
+            lastTabSwitchTime = now;
+            
+            console.log(`Tab switch detected (#${tabSwitchCount}). Logging to server...`);
+            
+            // Immediately log when user switches away
+            logProctoringEvent(
+                'tab_switch', 
+                `User switched away from exam tab (occurrence #${tabSwitchCount})`,
+                null // No screenshot possible when tab is not visible
+            );
+            
+            // If it's a recurring issue, log a violation
+            if (tabSwitchCount >= 3) {
+                logProctoringEvent(
+                    'serious_violation',
+                    `User has switched tabs ${tabSwitchCount} times during the exam`,
+                    null
+                );
+            }
+            
+            showWarning('Tab switching detected! Please return to the exam immediately.');
+        } else if (lastTabSwitchTime) {
+            // Calculate time away from tab
+            const timeAway = (now - lastTabSwitchTime) / 1000; // in seconds
+            
+            // Take screenshot when user returns
+            setTimeout(() => {
+                if (canvas && video) {
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                    const screenshot = canvas.toDataURL('image/jpeg', 0.7);
+                    
+                    // Log the return with time information
+                    logProctoringEvent(
+                        'tab_switch_return', 
+                        `User returned after ${timeAway.toFixed(1)} seconds away from exam tab (switch #${tabSwitchCount})`,
+                        screenshot
+                    );
+                }
+            }, 1000);
+            
+            lastTabSwitchTime = null;
+        }
+    });
+    
+    // Initialize proctoring on page load
+    console.log('Initializing proctoring system...');
+    setupProctoring();
+});
+    </script>
+</body>
+</html>

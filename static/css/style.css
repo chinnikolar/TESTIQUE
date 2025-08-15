@@ -1,0 +1,137 @@
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #f8f9fa;
+}
+
+.navbar {
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.card {
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    transition: transform 0.3s;
+}
+
+.card:hover {
+    transform: translateY(-5px);
+}
+
+.login-container {
+    margin-top: 100px;
+}
+
+/* Custom styles for exams */
+.exam-card {
+    border-left: 4px solid #007bff;
+}
+
+.question-card {
+    background-color: #fff;
+    transition: all 0.3s ease;
+}
+
+.question-card:hover {
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+}
+
+/* Dashboard widgets */
+.stats-card {
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 20px;
+    color: white;
+}
+
+.stats-card.primary {
+    background: linear-gradient(45deg, #007bff, #0056b3);
+}
+
+.stats-card.success {
+    background: linear-gradient(45deg, #28a745, #1e7e34);
+}
+
+.stats-card.warning {
+    background: linear-gradient(45deg, #ffc107, #d39e00);
+}
+
+.stats-card.danger {
+    background: linear-gradient(45deg, #dc3545, #bd2130);
+}
+
+.stats-icon {
+    font-size: 3rem;
+    opacity: 0.7;
+}
+
+/* Proctoring related styles */
+.webcam-overlay {
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    width: 200px;
+    height: 150px;
+    border: 2px solid #dc3545;
+    z-index: 1001;
+    background-color: #000;
+    overflow: hidden;
+}
+
+.proctoring-warning {
+    background-color: #dc3545;
+    color: white;
+    border-radius: 5px;
+    padding: 15px;
+    margin-bottom: 20px;
+}
+
+/* Timer styles */
+.timer {
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: #dc3545;
+}
+
+/* Question navigation buttons */
+.question-btn {
+    width: 40px;
+    height: 40px;
+    margin: 5px;
+    font-weight: bold;
+}
+
+.question-btn.answered {
+    background-color: #198754;
+    color: white;
+    border-color: #198754;
+}
+
+.question-btn.current {
+    border: 2px solid #0d6efd;
+}
+
+/* Media queries for responsive design */
+@media (max-width: 768px) {
+    .navbar-brand {
+        font-size: 1.1rem;
+    }
+    
+    .stats-card {
+        padding: 15px;
+    }
+    
+    .stats-icon {
+        font-size: 2rem;
+    }
+    
+    .question-btn {
+        width: 35px;
+        height: 35px;
+        margin: 3px;
+        font-size: 0.8rem;
+    }
+    
+    .webcam-overlay {
+        width: 150px;
+        height: 100px;
+    }
+}
